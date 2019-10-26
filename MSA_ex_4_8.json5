@@ -1,0 +1,26 @@
+/* Example 4.8 from
+
+McGuire, Gallagher and Zieman: Matrix Structural Analysis, 2nd ed. (2015)
+
+This is a 2-element beam used to test individual element stiffness matrices
+as well as the global (KGG) matrix assembly.
+*/
+
+{
+    Nodes : [
+        {id: 1, loc: [0, 0]},
+        {id: 2, loc: [8E3, 0]},
+        {id: 3, loc: [13E3, 0]},
+    ],
+    Elements : [
+        {id: 1, nodes: [1, 2], mat: 1, section: 1},
+        {id: 2, nodes: [2, 3], mat: 1, section: 2}
+    ],
+    BeamSections: [
+        {id: 1, A: 6E3, Iz: 200E6, J: 300E3},
+        {id: 2, A: 4E3, Iz: 50E6, J: 100E3},
+    ],
+    Materials: [
+        {id: 1, E: 200E3, nu: 0.3}
+    ]
+}
