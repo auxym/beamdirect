@@ -1,4 +1,6 @@
-import tables, hashes, math, sequtils, algorithm
+import tables, hashes, sequtils
+from math import hypot
+from algorithm import sort
 import arraymancer
 import input
 
@@ -33,6 +35,7 @@ func getStiffnessMatrix(elem: Element, db: InputDb): Tensor[float64] =
     let L3 = L2*L
 
     let nu = mat.nu
+    let E = mat.E
     let A = section.A
     let Iz = section.Iz
     let J = section.J
@@ -109,9 +112,7 @@ func assemble(dofTable: DofTable, db: InputDb): Tensor[float64] =
 
 proc solve(db: InputDb): Tensor[float64] =
     let dofTable = buildDofTable(db.nodes)
-    echo dofTable.dofs
     let kgg = assemble(dofTable, db)
-    echo kgg
 
 import os
 let inputdef = commandLineParams()[0].readJsonInput
