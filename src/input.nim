@@ -6,16 +6,16 @@ type Point* = tuple[x: float64, y: float64]
 type EntityId* = int
 
 type Element* = object
-    id: EntityId
-    nodes: array[2, EntityId]
-    mat: EntityId
-    section: EntityId
+    id*: EntityId
+    nodes*: array[2, EntityId]
+    mat*: EntityId
+    section*: EntityId
 
 type Node* = object
     id*: EntityId
     loc*: Point
 
-type Material = object
+type Material* = object
     id*: EntityId
     E*: float64
     nu*: float64
@@ -52,8 +52,3 @@ proc readJsonInput*(fname: string): InputDb =
     result.nodes = buildTable(ji.Nodes)
     result.elements = buildTable(ji.Elements)
     result.materials = buildTable(ji.Materials)
-
-    echo result
-
-import os
-discard commandLineParams()[0].readJsonInput

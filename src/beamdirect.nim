@@ -1,40 +1,41 @@
-import tables
-import hashes
+import tables, hashes, math, sequtils, algorithm
 import arraymancer
-import math
-
-import inputData
+import input
 
 const numDofsPerNode = 4
 type DofDirection = enum tx, ty, rx, rz
 
-
 type Dof = tuple
-    node: uint
+    node: EntityId
     direction: DofDirection
 
 type DofTable = ref object
     dofs: seq[Dof]
     index: Table[Dof, int]
 
-func hash(d: Dof): Hash = hash(d)
+func hash(d: Dof): Hash = !$(d.node.hash !& d.direction.hash)
 
 func dist(a, b: Node): float64 =
     let dx = b.loc.x - a.loc.x
     let dy = b.loc.y - a.loc.y
     return hypot(dx, dy)
 
-func getStiffnessMatrix(elem: Element): Tensor[float64] =
+func getStiffnessMatrix(elem: Element, db: InputDb): Tensor[float64] =
     result = zeros[float64]([8, 8])
 
-    let L = dist(elem.nodes[0], elem.nodes[1])
+    let nodeA = db.nodes[elem.nodes[0]]
+    let nodeB = db.nodes[elem.nodes[1]]
+    let mat = db.materials[elem.mat]
+    let section = db.sections[elem.section]
+
+    let L = dist(nodeA, nodeB)
     let L2 = L*L
     let L3 = L2*L
 
-    let nu = elem.mat.nu
-    let A = elem.section.A
-    let Iz = elem.section.Iz
-    let J = elem.section.J
+    let nu = mat.nu
+    let A = section.A
+    let Iz = section.Iz
+    let J = section.J
 
     var kaa = zeros[float64]([4, 4])
     kaa[0, 0] = A / L
@@ -67,26 +68,38 @@ func getStiffnessMatrix(elem: Element): Tensor[float64] =
     
     result = result * E
 
-func getDofList(elem:Element): seq[Dof] =
-    for n in elem.nodes:
+func getDofList(elem: Element): seq[Dof] =
+    for nodeId in elem.nodes:
         for dir in DofDirection:
-            result.add((n.id, dir))
+            result.add((nodeId, dir))
+    assert result.len == 8
 
-func buildDofTable(nodes:seq[Node]) : DofTable =
-    result.dofs = newSeq[Dof](nodes.len * numDofsPerNode)
-    result.index = initTable[Dof, int](rightSize(nodes.len * numDofsPerNode))
-    for i, n in nodes:
-        for k in DofDirection:
-            let dof: Dof = (n.id, k)
+func buildDofTable(nodeTable: TableRef[EntityId, Node]) : DofTable =
+    var nodeIds = toSeq(nodeTable.keys)
+    nodeIds.sort
+
+    let numDofs = nodeTable.len * numDofsPerNode
+    new(result)
+    result.dofs = newSeqofCap[Dof](numDofs)
+    result.index = initTable[Dof, int](rightSize(numDofs))
+
+    var dofId = 0
+    for nodeId in nodeIds:
+        for dir in DofDirection:
+            let dof: Dof = (nodeId, dir)
             result.dofs.add dof
-            result.index[dof] = i
+            result.index[dof] = dofId
+            inc dofId
 
-func assemble(dofTable: DofTable, elems: seq[Element]): Tensor[float64] =
+    assert result.dofs.len == numDofs
+    assert result.index.len == numDofs
+
+func assemble(dofTable: DofTable, db: InputDb): Tensor[float64] =
     let nDofs = dofTable.dofs.len
-    result = zeros[float64](nDofs, nDofs)
 
-    for e in elems:
-        let ke = e.getStiffnessMatrix
+    result = zeros[float64](nDofs, nDofs)
+    for e in db.elements.values:
+        let ke = e.getStiffnessMatrix(db)
         let elemDofs = e.getDofList
         for row, rowDof in elemDofs:
             for col, colDof in elemDofs:
@@ -94,6 +107,12 @@ func assemble(dofTable: DofTable, elems: seq[Element]): Tensor[float64] =
                 let colDofGlobalId = dofTable.index[colDof]
                 result[rowDofGlobalId, colDofGlobalId] += ke[row, col]
 
-func solve(nodes: seq[Node], elems: seq[Element], spcs: seq[Spc], loads: seq[NodalLoad]): Tensor[float64] =
-    let dofTable = buildDofTable(nodes)
-    let kgg = assemble(dofTable, elems)
+proc solve(db: InputDb): Tensor[float64] =
+    let dofTable = buildDofTable(db.nodes)
+    echo dofTable.dofs
+    let kgg = assemble(dofTable, db)
+    echo kgg
+
+import os
+let inputdef = commandLineParams()[0].readJsonInput
+discard solve(inputdef)
