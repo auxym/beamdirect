@@ -77,7 +77,7 @@ func getDofList(elem: Element): seq[Dof] =
             result.add((nodeId, dir))
     assert result.len == 8
 
-func buildDofTable(nodeTable: TableRef[EntityId, Node]) : DofTable =
+func buildDofTable*(nodeTable: TableRef[EntityId, Node]) : DofTable =
     var nodeIds = toSeq(nodeTable.keys)
     nodeIds.sort
 
@@ -97,23 +97,25 @@ func buildDofTable(nodeTable: TableRef[EntityId, Node]) : DofTable =
     assert result.dofs.len == numDofs
     assert result.index.len == numDofs
 
-func assemble(dofTable: DofTable, db: InputDb): Tensor[float64] =
-    let nDofs = dofTable.dofs.len
+func assemble*(db: InputDb, dofTab: DofTable): Tensor[float64] =
+    let nDofs = dofTab.dofs.len
 
     result = zeros[float64](nDofs, nDofs)
     for e in db.elements.values:
-        let ke = e.getStiffnessMatrix(db)
-        let elemDofs = e.getDofList
+        let
+            ke = e.getStiffnessMatrix(db)
+            elemDofs = e.getDofList
         for row, rowDof in elemDofs:
             for col, colDof in elemDofs:
-                let rowDofGlobalId = dofTable.index[rowDof]
-                let colDofGlobalId = dofTable.index[colDof]
+                let rowDofGlobalId = dofTab.index[rowDof]
+                let colDofGlobalId = dofTab.index[colDof]
                 result[rowDofGlobalId, colDofGlobalId] += ke[row, col]
 
-proc solve(db: InputDb): Tensor[float64] =
+proc solve*(db: InputDb): Tensor[float64] =
     let dofTable = buildDofTable(db.nodes)
-    let kgg = assemble(dofTable, db)
+    let kgg = assemble(db, dofTable)
 
-import os
-let inputdef = commandLineParams()[0].readJsonInput
-discard solve(inputdef)
+when isMainModule:
+    import os
+    let inputdef = commandLineParams()[0].readJsonInput
+    discard solve(inputdef)
