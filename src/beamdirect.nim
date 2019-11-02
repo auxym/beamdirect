@@ -48,19 +48,12 @@ func getStiffnessMatrix(elem: Element, db: InputDb): Tensor[float64] =
     kaa[1, 3] = 6 * Iz / L2
     kaa[3, 1] = 6 * Iz / L2
 
-    var kab = zeros[float64]([4, 4])
-    kab[0, 0] = -A / L
-    kab[1, 1] = -12 * Iz / L3
-    kab[2, 2] = -J / (2 * (1+nu) * L)
+    var kab = -kaa.clone()
     kab[3, 3] = 2 * Iz / L
     kab[1, 3] = 6 * Iz / L2
     kab[3, 1] = -6 * Iz / L2
 
-    var kbb = zeros[float64]([4, 4])
-    kbb[0, 0] = A / L
-    kbb[1, 1] = 12 * Iz / L3
-    kbb[2, 2] = J / (2 * (1+nu) * L)
-    kbb[3, 3] = 4 * Iz / L
+    var kbb = kaa.clone()
     kbb[1, 3] = -6 * Iz / L2
     kbb[3, 1] = -6 * Iz / L2
 
@@ -68,7 +61,6 @@ func getStiffnessMatrix(elem: Element, db: InputDb): Tensor[float64] =
     result[0..3, 4..7] = kab
     result[4..7, 0..3] = kab.transpose
     result[4..7, 4..7] = kbb
-    
     result = result * E
 
 func getDofList(elem: Element): seq[Dof] =
