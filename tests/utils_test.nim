@@ -19,3 +19,9 @@ func isSymmetric*[T: SomeNumber](a: Tensor[T]): bool =
             elif a[i, j] != a[j, i]:
                 return false
     return true
+
+func max_abs_error*[T: SomeFloat](y, y_true: Tensor[T]): T =
+    absolute_error(y, y_true).max()
+
+func max_rel_error*[T: SomeFloat](y, y_true: Tensor[T]): T =
+    relative_error(y, y_true).max()
