@@ -1,48 +1,26 @@
 import samson
-import tables, options
+import tables, options, strutils, sequtils
+import database
 
-type Point* = tuple[x: float64, y: float64]
+type StrSpc = object
+    id: EntityId
+    node: EntityId
+    comps: Table[string, float]
 
-type EntityId* = int
+func toSpc(s: StrSpc): Spc =
+    result.id = s.id
+    result.node = s.node
 
-type Element* = object
-    id*: EntityId
-    nodes*: array[2, EntityId]
-    mat*: EntityId
-    section*: EntityId
-
-type Node* = object
-    id*: EntityId
-    loc*: Point
-
-type Material* = object
-    id*: EntityId
-    E*: float64
-    nu*: float64
-    rho*: Option[float64]
-
-type BeamSection* = object
-    id*: EntityId
-    Iz*: float64
-    J*: float64
-    A*: float64
+    result.comps = initTable[DofDirection, float](rightSize(s.comps.len))
+    for dirName, val in s.comps:
+        result.comps[parseEnum[DofDirection](dirName)] = val
 
 type JsonInput = object
     BeamSections: seq[BeamSection]
     Nodes: seq[Node]
     Elements: seq[Element]
     Materials: seq[Material]
-
-type InputDb* = object
-    sections*: TableRef[EntityId, BeamSection]
-    nodes*: TableRef[EntityId, Node]
-    elements*: TableRef[EntityId, Element]
-    materials*: TableRef[EntityId, Material]
-
-func buildTable[T](items: seq[T]): TableRef[EntityId, T] =
-    result = newTable[EntityId, T](rightSize(items.len))
-    for it in items:
-        result.add(it.id, it)
+    Spcs: seq[StrSpc]
 
 proc readJsonInput*(fname: string): InputDb =
     let content: string = fname.readFile
@@ -52,3 +30,4 @@ proc readJsonInput*(fname: string): InputDb =
     result.nodes = buildTable(ji.Nodes)
     result.elements = buildTable(ji.Elements)
     result.materials = buildTable(ji.Materials)
+    result.spcs = buildTable(ji.Spcs.map(toSpc))
