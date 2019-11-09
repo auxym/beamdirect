@@ -1,5 +1,5 @@
 import beamdirect, input, utils_test
-import arraymancer, unittest, os
+import arraymancer, unittest, os, sequtils
 
 suite "assemble":
     test "check global stiffness matrix":
@@ -27,3 +27,44 @@ suite "assemble":
 
         sol = triutosym(sol) * 2E5
         check max_rel_error(kgg, sol) < 1E-4
+
+suite "partition":
+    test "partition 3x3 matrix":
+        let a = [[1, 2, 3],
+                 [4, 5, 6],
+                 [7, 8, 9]].toTensor()
+
+        let (a11, a12, a21, a22) = partition(a, @[false, true, false])
+
+        let
+            a11_true = [[1, 3], [7, 9]].toTensor()
+            a12_true = [[2], [8]].toTensor()
+            a21_true = [[4, 6]].toTensor()
+            a22_true = [[5]].toTensor()
+
+        check a11 == a11_true
+        check a12 == a12_true
+        check a21 == a21_true
+        check a22 == a22_true
+
+    test "partition all false":
+        let
+            a = ones[float](10, 10)
+            cp = repeat(false, 10)
+            (a11, a12, a21, a22) = a.partition(cp)
+
+        check a11 == ones[float](10, 10)
+        check a12.shape == [10, 0]
+        check a21.shape == [0, 10]
+        check a22.shape == [0, 0]
+
+    test "partition all true":
+        let
+            a = ones[float](10, 10)
+            cp = repeat(true, 10)
+            (a11, a12, a21, a22) = a.partition(cp)
+            
+        check a22 == ones[float](10, 10)
+        check a12.shape == [0, 10]
+        check a21.shape == [10, 0]
+        check a11.shape == [0, 0]

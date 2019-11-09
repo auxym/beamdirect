@@ -103,6 +103,50 @@ func assemble*(db: InputDb, dofTab: DofTable): Tensor[float64] =
                 let colDofGlobalId = dofTab.index[colDof]
                 result[rowDofGlobalId, colDofGlobalId] += ke[row, col]
 
+func partition*[T: SomeNumber](a: Tensor[T], cp: seq[bool]): 
+    (Tensor[T], Tensor[T], Tensor[T], Tensor[T]) =
+    assert a.rank == 2
+    assert a.shape[0] == a.shape[1]
+    assert cp.len == a.shape[0]
+
+    let
+        n = a.shape[0]
+        npart2 = cp.count(true)
+        npart1 = n - npart2
+
+    var
+        a11 = newTensorUninit[T](npart1, npart1)
+        a12 = newTensorUninit[T](npart1, npart2)
+        a21 = newTensorUninit[T](npart2, npart1)
+        a22 = newTensorUninit[T](npart2, npart2)
+
+    type Quadrant = enum q11, q12, q21, q22
+    func getDest(srcRow, srcCol: bool): Quadrant =
+        if not srcRow and not srcCol: return q11
+        if srcRow and not srcCol: return q21
+        if not srcRow and srcCol: return q12
+        if srcRow and srcCol: return q22
+
+    var row1, row2 = -1
+    for row in 0..<n:
+        var col1, col2 = -1
+        if cp[row]: inc row2 else: inc row1
+
+        for col in 0..<n:
+            if cp[col]: inc col2 else: inc col1
+            case getDest(cp[row], cp[col]):
+                of q11:
+                    a11[row1, col1] = a[row, col]
+                of q12:
+                    a12[row1, col2] = a[row, col]
+                of q21:
+                    a21[row2, col1] = a[row, col]
+                of q22:
+                    a22[row2, col2] = a[row, col]
+    
+    return (a11, a12, a21, a22)
+
+
 proc solve*(db: InputDb): Tensor[float64] =
     let dofTable = buildDofTable(db.nodes)
     let kgg = assemble(db, dofTable)
