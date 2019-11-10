@@ -28,13 +28,21 @@ suite "assemble":
         sol = triutosym(sol) * 2E5
         check max_rel_error(kgg, sol) < 1E-4
 
+    test "check load vector":
+        let
+            dataFile = getAppDir() / "data/MSA_ex_4_8.json5"
+            db = readJsonInput dataFile
+            allDofs = buildDofTable(db.nodes)
+            loadvec = getLoadVector(db, allDofs)
+
+
 suite "partition":
     test "partition 3x3 matrix":
         let a = [[1, 2, 3],
                  [4, 5, 6],
                  [7, 8, 9]].toTensor()
 
-        let (a11, a12, a21, a22) = partition(a, @[false, true, false])
+        let (a11, a12, a21, a22) = partitionMatrix(a, @[false, true, false])
 
         let
             a11_true = [[1, 3], [7, 9]].toTensor()
@@ -51,7 +59,7 @@ suite "partition":
         let
             a = ones[float](10, 10)
             cp = repeat(false, 10)
-            (a11, a12, a21, a22) = a.partition(cp)
+            (a11, a12, a21, a22) = a.partitionMatrix(cp)
 
         check a11 == ones[float](10, 10)
         check a12.shape == [10, 0]
@@ -62,9 +70,20 @@ suite "partition":
         let
             a = ones[float](10, 10)
             cp = repeat(true, 10)
-            (a11, a12, a21, a22) = a.partition(cp)
+            (a11, a12, a21, a22) = a.partitionMatrix(cp)
             
         check a22 == ones[float](10, 10)
         check a12.shape == [0, 10]
         check a21.shape == [10, 0]
         check a11.shape == [0, 0]
+
+    test "partition vector":
+        let
+            x = toSeq(0..6).toTensor()
+            cp = @[false, false, true, false, false, false, true]
+            (x1, x2) = partitionVector(x, cp)
+            x1_true = [0, 1, 3, 4, 5].toTensor()
+            x2_true = [2, 6].toTensor()
+
+        check x1 == x1_true
+        check x2 == x2_true

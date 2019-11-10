@@ -11,6 +11,10 @@ type LinearSystem = object
     p: Tensor[float]
     doftab: DofTable
 
+type DisplSet = enum usetN, usetF, usetS
+
+type DofIdValPair = tuple[dofId:int, val: float]
+
 func dist(a, b: Node): float64 =
     let dx = b.loc.x - a.loc.x
     let dy = b.loc.y - a.loc.y
@@ -23,6 +27,8 @@ func getStiffnessMatrix(elem: Element, db: InputDb): Tensor[float64] =
     let nodeB = db.nodes[elem.nodes[1]]
     let mat = db.materials[elem.mat]
     let section = db.sections[elem.section]
+
+    doAssert nodeA.loc.y == nodeB.loc.y
 
     let L = dist(nodeA, nodeB)
     let L2 = L*L
@@ -166,14 +172,12 @@ func partitionMatrix*[T: SomeNumber](a: Tensor[T], cp: seq[bool]):
     
     return (a11, a12, a21, a22)
 
-func getLoadVector(db: InputDb, doftab: DofTable): Tensor[float] =
+func getLoadVector*(db: InputDb, doftab: DofTable): Tensor[float] =
     result = zeros[float](doftab.dofs.len)
     for ld in db.loads.values:
         for comp, val in ld.comps:
             let idx = doftab.index[(ld.node, comp)]
             result[idx] = val
-
-type DofIdValPair = tuple[dofId:int, val: float]
 
 func unpackSpcs(spcs: seq[Spc], doftab: DofTable): seq[DofIdValPair] =
     result = newSeq[DofIdValPair]()
@@ -182,34 +186,53 @@ func unpackSpcs(spcs: seq[Spc], doftab: DofTable): seq[DofIdValPair] =
             let i = doftab.index[(spc.node, co)]
             result.add (i, val)
 
-func applySpcs(sys: LinearSystem, spcs: seq[Spc]): LinearSystem =
-    let unpacked = unpackSpcs(spcs, sys.doftab).sortedByIt(it.dofId)
+func applySpcs*(sys: LinearSystem, spcs: seq[Spc]): (LinearSystem, Tensor[float]) =
     let
-        ndofs = sys.doftab.dofs.len
+        unpacked = unpackSpcs(spcs, sys.doftab).sortedByIt(it.dofId)
+        ndofsn = sys.doftab.dofs.len # num dofs n-set
+        ndofsf = ndofsn - unpacked.len # num dofs f-set
 
     # Displacement vector u for s-set
     var us = unpacked.mapIt(it.val).toTensor()
 
     # Partitioning vector
-    var cp = repeat(false, ndofs)
+    var cp = repeat(false, ndofsn)
     for (idof, val) in unpacked:
         cp[idof] = true
     
     # Partition kgg and pg in l and s sets
-    let (kll, kls, ksl, kss) = partitionMatrix(sys.k, cp)
-    let (pl, ps) = partitionVector(sys.p, cp)
+    let (kff, kfs, ksf, kss) = partitionMatrix(sys.k, cp)
+    let (pf, ps) = partitionVector(sys.p, cp)
 
-    result.k = kll
-    result.p = pl - kls * us
-    # TODO: filter doftable
+    # Filtered DOF table of l-set
+    var ldofst = new(DofTable)
+    ldofst.dofs = newSeqOfCap[Dof](ndofsf)
+    ldofst.index = initTable[Dof, int](rightSize(ndofsf))
+    for i, dof in sys.doftab.dofs:
+        if not cp[i]:
+            ldofst.dofs.add dof
+            ldofst.index[dof] = ldofst.dofs.len - 1
 
-func solveLinSys(sys: LinearSystem): Tensor[float] =
-    discard
+    var reduced: LinearSystem
+    reduced.k = kff
+    reduced.p = pf - kfs * us
+    reduced.doftab = ldofst
 
-func assembleGlobalSystem(db: InputDb): LinearSystem =
+    assert reduced.k.shape[0] == reduced.p.shape[0]
+    assert reduced.k.shape[0] == reduced.doftab.dofs.len
+    assert reduced.doftab.index.len == reduced.doftab.dofs.len
+
+func assembleGlobalSystem*(db: InputDb): LinearSystem =
     result.doftab = buildDofTable(db.nodes)
     result.k = db.assemble(result.doftab)
     result.p = db.getLoadVector(result.doftab)
 
+func solveLinSys(sys: LinearSystem): Tensor[float] =
+    discard
+
 proc solve*(db: InputDb): Tensor[float64] =
     let sgg = db.assembleGlobalSystem
+    let sll = sgg.applySpcs(toSeq(db.spcs.values))
+
+    let uf = sll.solveLinSys
+    # Note: spcforce = KSF * UF

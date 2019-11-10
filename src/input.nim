@@ -7,7 +7,20 @@ type StrSpc = object
     node: EntityId
     comps: Table[string, float]
 
+type StrLoad = object
+    id: EntityId
+    node: EntityId
+    comps: Table[string, float]
+
 func toSpc(s: StrSpc): Spc =
+    result.id = s.id
+    result.node = s.node
+
+    result.comps = initTable[DofDirection, float](rightSize(s.comps.len))
+    for dirName, val in s.comps:
+        result.comps[parseEnum[DofDirection](dirName)] = val
+
+func toLoad(s: StrLoad): Load =
     result.id = s.id
     result.node = s.node
 
@@ -20,7 +33,8 @@ type JsonInput = object
     Nodes: seq[Node]
     Elements: seq[Element]
     Materials: seq[Material]
-    Spcs: seq[StrSpc]
+    Spcs: Option[seq[StrSpc]]
+    Loads: Option[seq[StrLoad]]
 
 proc readJsonInput*(fname: string): InputDb =
     let content: string = fname.readFile
@@ -30,4 +44,9 @@ proc readJsonInput*(fname: string): InputDb =
     result.nodes = buildTable(ji.Nodes)
     result.elements = buildTable(ji.Elements)
     result.materials = buildTable(ji.Materials)
-    result.spcs = buildTable(ji.Spcs.map(toSpc))
+
+    if ji.Spcs.isSome:
+        result.spcs = buildTable(ji.Spcs.get.map(toSpc))
+
+    if ji.Loads.isSome:
+        result.loads = buildTable(ji.Loads.get.map(toLoad))
