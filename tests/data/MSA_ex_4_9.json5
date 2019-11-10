@@ -28,7 +28,7 @@ McGuire, Gallagher and Zieman: Matrix Structural Analysis, 2nd ed. (2015)
         {
             id: 1,
             node: 3,
-            comps: {tx:3535.53391, ty: 3535.53391}
+            comps: {tx:3535.53391, ty: -3535.53391}
         },
     ]
 }

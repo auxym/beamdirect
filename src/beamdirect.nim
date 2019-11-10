@@ -1,19 +1,8 @@
-import tables, hashes, sequtils
+import tables, hashes, sequtils, sets
 from math import hypot
 from algorithm import sort, sortedByIt
 import arraymancer
-import input, database
-
-const numDofsPerNode = 4
-
-type LinearSystem = object
-    k: Tensor[float]
-    p: Tensor[float]
-    doftab: DofTable
-
-type DisplSet = enum usetN, usetF, usetS
-
-type DofIdValPair = tuple[dofId:int, val: float]
+import database, dof, basetypes
 
 func dist(a, b: Node): float64 =
     let dx = b.loc.x - a.loc.x
@@ -69,28 +58,9 @@ func getDofList(elem: Element): seq[Dof] =
             result.add((nodeId, dir))
     assert result.len == 8
 
-func buildDofTable*(nodeTable: TableRef[EntityId, Node]) : DofTable =
-    var nodeIds = toSeq(nodeTable.keys)
-    nodeIds.sort
-
-    let numDofs = nodeTable.len * numDofsPerNode
-    new(result)
-    result.dofs = newSeqofCap[Dof](numDofs)
-    result.index = initTable[Dof, int](rightSize(numDofs))
-
-    var dofId = 0
-    for nodeId in nodeIds:
-        for dir in DofDirection:
-            let dof: Dof = (nodeId, dir)
-            result.dofs.add dof
-            result.index[dof] = dofId
-            inc dofId
-
-    assert result.dofs.len == numDofs
-    assert result.index.len == numDofs
 
 func assemble*(db: InputDb, dofTab: DofTable): Tensor[float64] =
-    let nDofs = dofTab.dofs.len
+    let nDofs = dofTab.len
 
     result = zeros[float64](nDofs, nDofs)
     for e in db.elements.values:
@@ -99,18 +69,17 @@ func assemble*(db: InputDb, dofTab: DofTable): Tensor[float64] =
             elemDofs = e.getDofList
         for row, rowDof in elemDofs:
             for col, colDof in elemDofs:
-                let rowDofGlobalId = dofTab.index[rowDof]
-                let colDofGlobalId = dofTab.index[colDof]
+                let rowDofGlobalId = dofTab[rowDof]
+                let colDofGlobalId = dofTab[colDof]
                 result[rowDofGlobalId, colDofGlobalId] += ke[row, col]
 
-func partitionVector*[T: SomeNumber](v: Tensor[T], cp: seq[bool]):
+func partitionVector*[T: SomeNumber](v: Tensor[T], part2: HashSet[int]):
     (Tensor[T], Tensor[T]) =
     assert v.rank == 1
-    assert v.shape[0] == cp.len
 
     let
         n = v.shape[0]
-        npart2 = cp.count(true)
+        npart2 = part2.len
         npart1 = n - npart2
     
     var
@@ -120,7 +89,7 @@ func partitionVector*[T: SomeNumber](v: Tensor[T], cp: seq[bool]):
         i2 = 0
 
     for i in 0..<n:
-        if cp[i]:
+        if i in part2:
             v2[i2] = v[i]
             inc i2
         else:
@@ -129,15 +98,14 @@ func partitionVector*[T: SomeNumber](v: Tensor[T], cp: seq[bool]):
     
     return (v1, v2)
 
-func partitionMatrix*[T: SomeNumber](a: Tensor[T], cp: seq[bool]): 
+func partitionMatrix*[T: SomeNumber](a: Tensor[T], part2: HashSet[int]): 
     (Tensor[T], Tensor[T], Tensor[T], Tensor[T]) =
     assert a.rank == 2
     assert a.shape[0] == a.shape[1]
-    assert cp.len == a.shape[0]
 
     let
         n = a.shape[0]
-        npart2 = cp.count(true)
+        npart2 = part2.len
         npart1 = n - npart2
 
     var
@@ -156,11 +124,11 @@ func partitionMatrix*[T: SomeNumber](a: Tensor[T], cp: seq[bool]):
     var row1, row2 = -1
     for row in 0..<n:
         var col1, col2 = -1
-        if cp[row]: inc row2 else: inc row1
+        if row in part2: inc row2 else: inc row1
 
         for col in 0..<n:
-            if cp[col]: inc col2 else: inc col1
-            case getDest(cp[row], cp[col]):
+            if col in part2: inc col2 else: inc col1
+            case getDest(row in part2, col in part2):
                 of q11:
                     a11[row1, col1] = a[row, col]
                 of q12:
@@ -173,66 +141,73 @@ func partitionMatrix*[T: SomeNumber](a: Tensor[T], cp: seq[bool]):
     return (a11, a12, a21, a22)
 
 func getLoadVector*(db: InputDb, doftab: DofTable): Tensor[float] =
-    result = zeros[float](doftab.dofs.len)
+    result = zeros[float](doftab.len)
     for ld in db.loads.values:
         for comp, val in ld.comps:
-            let idx = doftab.index[(ld.node, comp)]
+            let idx = doftab[(ld.node, comp)]
             result[idx] = val
 
-func unpackSpcs(spcs: seq[Spc], doftab: DofTable): seq[DofIdValPair] =
-    result = newSeq[DofIdValPair]()
+func unpackSpcs(spcs: seq[Spc], doftab: DofTable): (DofTable, Tensor[float]) =
+    # Extract seq of (dof, y) pairs from the Spc objects
+    type spcTuple = tuple[d: Dof, y: float]
+    var spcTupleList = newSeqOfCap[spcTuple](doftab.len)
     for spc in spcs:
         for co, val in spc.comps:
-            let i = doftab.index[(spc.node, co)]
-            result.add (i, val)
+            spcTupleList.add ((spc.node, co), val)
 
-func applySpcs*(sys: LinearSystem, spcs: seq[Spc]): (LinearSystem, Tensor[float]) =
-    let
-        unpacked = unpackSpcs(spcs, sys.doftab).sortedByIt(it.dofId)
-        ndofsn = sys.doftab.dofs.len # num dofs n-set
-        ndofsf = ndofsn - unpacked.len # num dofs f-set
-
-    # Displacement vector u for s-set
-    var us = unpacked.mapIt(it.val).toTensor()
-
-    # Partitioning vector
-    var cp = repeat(false, ndofsn)
-    for (idof, val) in unpacked:
-        cp[idof] = true
+    # Sort in same order is input DOFs
+    spcTupleList.sort do (a, b: spcTuple) -> int:
+        let a_idx = doftab[a.d]
+        let b_idx = doftab[b.d]
+        cmp(a_idx, b_idx)
     
-    # Partition kgg and pg in l and s sets
-    let (kff, kfs, ksf, kss) = partitionMatrix(sys.k, cp)
-    let (pf, ps) = partitionVector(sys.p, cp)
+    # Build results
+    var
+        dofs = initDofTable(spcTupleList.len)
+        ys = newTensorUninit[float](spcTupleList.len)
+    for i, st in spcTupleList:
+        dofs.add st.d
+        ys[i] = st.y
 
-    # Filtered DOF table of l-set
-    var ldofst = new(DofTable)
-    ldofst.dofs = newSeqOfCap[Dof](ndofsf)
-    ldofst.index = initTable[Dof, int](rightSize(ndofsf))
-    for i, dof in sys.doftab.dofs:
-        if not cp[i]:
-            ldofst.dofs.add dof
-            ldofst.index[dof] = ldofst.dofs.len - 1
+    return (dofs, ys)
 
-    var reduced: LinearSystem
-    reduced.k = kff
-    reduced.p = pf - kfs * us
-    reduced.doftab = ldofst
+func buildPartSet(allDofs, dofs2: DofTable): HashSet[int] =
+    result.init(sets.rightSize(dofs2.len))
+    for df in dofs2:
+        result.incl allDofs[df]
 
-    assert reduced.k.shape[0] == reduced.p.shape[0]
-    assert reduced.k.shape[0] == reduced.doftab.dofs.len
-    assert reduced.doftab.index.len == reduced.doftab.dofs.len
+type SpcAppResult = tuple
+    kff: Tensor[float]
+    kfs: Tensor[float]
+    pf: Tensor[float]
+    fset: DofTable
 
-func assembleGlobalSystem*(db: InputDb): LinearSystem =
-    result.doftab = buildDofTable(db.nodes)
-    result.k = db.assemble(result.doftab)
-    result.p = db.getLoadVector(result.doftab)
+func applySpcs*(knn, pn, ys: Tensor[float], nset, sset: DofTable): SpcAppResult =
+    # Partition knn and pn in f and s sets
+    let
+        spartset = buildPartSet(nset, sset)
+        (kff, kfs, ksf, kss) = partitionMatrix(knn, spartset)
+        (pf_bar, ps) = partitionVector(pn, spartset)
 
-func solveLinSys(sys: LinearSystem): Tensor[float] =
-    discard
+    let fset = nset.difference(sset)
 
-proc solve*(db: InputDb): Tensor[float64] =
-    let sgg = db.assembleGlobalSystem
-    let sll = sgg.applySpcs(toSeq(db.spcs.values))
+    result.kff = kff
+    result.kfs = kfs
+    result.pf = pf_bar - kfs * ys
+    result.fset = fset
 
-    let uf = sll.solveLinSys
-    # Note: spcforce = KSF * UF
+    doAssert result.kff.shape[0] == result.fset.len
+    doAssert result.pf.shape[0] == result.fset.len
+
+proc solveStatic*(db: InputDb): Tensor[float64] =
+    let
+        nset = db.buildDofTable
+        knn = db.assemble(nset)
+        pn = db.getLoadVector(nset)
+
+        (sset, ys) = unpackSpcs(toSeq(db.spcs.values), nset)
+        spcReduced = applySpcs(knn=knn, pn=pn, nset=nset, sset=sset, ys=ys)
+
+    # let uf = solve(spcReduced.kff, spcReduced.pf)
+    # let spcforce = spcReduced.kfs.T * uf
+

@@ -1,20 +1,5 @@
-import options, tables, hashes
-
-type Point* = tuple[x: float64, y: float64]
-
-type EntityId* = int
-
-type DofDirection* = enum tx, ty, rx, rz
-
-type Dof* = tuple
-    node: EntityId
-    direction: DofDirection
-
-type DofTable* = ref object
-    dofs*: seq[Dof]
-    index*: Table[Dof, int]
-
-func hash*(d: Dof): Hash = !$(d.node.hash !& d.direction.hash)
+import options, tables, sequtils, algorithm
+import basetypes, dof
 
 type Element* = object
     id*: EntityId
@@ -60,3 +45,16 @@ func buildTable*[T](items: seq[T]): TableRef[EntityId, T] =
     result = newTable[EntityId, T](rightSize(items.len))
     for it in items:
         result.add(it.id, it)
+
+func buildDofTable*(db: InputDb) : DofTable =
+    let
+        nodeTable = db.nodes
+        numDofs = nodeTable.len * numDofsPerNode
+        nodeIds = toSeq(nodeTable.keys).sorted
+
+    result = initDofTable(numDofs)
+    for nodeId in nodeIds:
+        for dir in DofDirection:
+            result.add (nodeId, dir)
+
+    assert result.len == numDofs

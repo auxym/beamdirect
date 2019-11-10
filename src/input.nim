@@ -1,6 +1,6 @@
 import samson
 import tables, options, strutils, sequtils
-import database
+import database, basetypes, dof
 
 type StrSpc = object
     id: EntityId
@@ -47,6 +47,10 @@ proc readJsonInput*(fname: string): InputDb =
 
     if ji.Spcs.isSome:
         result.spcs = buildTable(ji.Spcs.get.map(toSpc))
+    else:
+        result.spcs = newTable[EntityId, Spc](2)
 
     if ji.Loads.isSome:
         result.loads = buildTable(ji.Loads.get.map(toLoad))
+    else:
+        result.loads = newTable[EntityId, Load](2)

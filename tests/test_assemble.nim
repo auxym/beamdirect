@@ -1,15 +1,16 @@
-import beamdirect, input, utils_test
+import beamdirect, input, utils_test, database, sets, dof
 import arraymancer, unittest, os, sequtils
+from math import sqrt
 
 suite "assemble":
     test "check global stiffness matrix":
         let
             dataFile = getAppDir() / "data/MSA_ex_4_8.json5"
             db = readJsonInput dataFile
-            allDofs = buildDofTable(db.nodes)
-            kgg = assemble(db, allDofs)
+            allDofs = db.buildDofTable
+            knn = assemble(db, allDofs)
 
-        check kgg.isSymmetric()
+        check knn.isSymmetric()
 
         var sol = zeros[float](12, 12)
         sol[0, 0..4] = [[0.75, 0, 0, 0, -0.75]]
@@ -26,14 +27,21 @@ suite "assemble":
         sol[11, 11] = 0.4E5
 
         sol = triutosym(sol) * 2E5
-        check max_rel_error(kgg, sol) < 1E-4
+        check max_rel_error(knn, sol) < 1E-4
 
     test "check load vector":
         let
-            dataFile = getAppDir() / "data/MSA_ex_4_8.json5"
+            dataFile = getAppDir() / "data/MSA_ex_4_9.json5"
             db = readJsonInput dataFile
-            allDofs = buildDofTable(db.nodes)
+            allDofs = db.buildDofTable
             loadvec = getLoadVector(db, allDofs)
+
+        var loadvec_true = zeros[float](12)
+        loadvec_true[allDofs[(3, tx)]] = 5000 / sqrt(2.0)
+        loadvec_true[allDofs[(3, ty)]] = -5000 / sqrt(2.0)
+
+        check loadvec.shape[0] == allDofs.len
+        check max_rel_error(loadvec, loadvec_true) < 1E-6
 
 
 suite "partition":
@@ -42,7 +50,7 @@ suite "partition":
                  [4, 5, 6],
                  [7, 8, 9]].toTensor()
 
-        let (a11, a12, a21, a22) = partitionMatrix(a, @[false, true, false])
+        let (a11, a12, a21, a22) = partitionMatrix(a, [1].toHashSet)
 
         let
             a11_true = [[1, 3], [7, 9]].toTensor()
@@ -58,8 +66,8 @@ suite "partition":
     test "partition all false":
         let
             a = ones[float](10, 10)
-            cp = repeat(false, 10)
-            (a11, a12, a21, a22) = a.partitionMatrix(cp)
+            empty = initHashSet[int]()
+            (a11, a12, a21, a22) = a.partitionMatrix(empty)
 
         check a11 == ones[float](10, 10)
         check a12.shape == [10, 0]
@@ -69,8 +77,7 @@ suite "partition":
     test "partition all true":
         let
             a = ones[float](10, 10)
-            cp = repeat(true, 10)
-            (a11, a12, a21, a22) = a.partitionMatrix(cp)
+            (a11, a12, a21, a22) = a.partitionMatrix(toSeq(0..<10).toHashSet)
             
         check a22 == ones[float](10, 10)
         check a12.shape == [0, 10]
@@ -80,8 +87,7 @@ suite "partition":
     test "partition vector":
         let
             x = toSeq(0..6).toTensor()
-            cp = @[false, false, true, false, false, false, true]
-            (x1, x2) = partitionVector(x, cp)
+            (x1, x2) = x.partitionVector([2, 6].toHashSet)
             x1_true = [0, 1, 3, 4, 5].toTensor()
             x2_true = [2, 6].toTensor()
 
