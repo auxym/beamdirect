@@ -1,5 +1,6 @@
 import beamdirect, input, utils_test, database, sets, dof
-import arraymancer, unittest, os, sequtils
+import arraymancer
+import unittest, os, sequtils, tables
 from math import sqrt
 
 suite "assemble":
@@ -42,6 +43,35 @@ suite "assemble":
 
         check loadvec.shape[0] == allDofs.len
         check max_rel_error(loadvec, loadvec_true) < 1E-6
+
+    test "apply zero SPCs":
+        let
+            dataFile = getAppDir() / "data/MSA_ex_4_9.json5"
+            db = readJsonInput dataFile
+            nset = db.buildDofTable
+            knn = assemble(db, nset)
+            pn = db.getLoadVector(nset)
+            spcReduced = applySpcs(knn=knn, pn=pn, nset=nset,
+                                   spcs=toSeq(db.spcs.values))
+
+            kff_true = [
+                [1.55, 0, 0, -0.8, 0, 0, 0],
+                [0.0, 22.115, 0, 0, 0, -7.6923, 0],
+                [0.0, 0.0, 1.4E5, 0, -12, 0, 2E4],
+                [0.0, 0.0, 0.0, 0.8, 0, 0, 0],
+                [0.0, 0.0, 0.0, 0.0, 0.0048, 0, -12],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 7.6923, 0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4E4],
+            ].toTensor.triutosym * 2E5
+
+            pf_true = [0.0, 0, 0, 5.0/sqrt(2.0), -5.0/sqrt(2.0), 0, 0].toTensor * 1E3
+
+        check spcReduced.kff.shape == [7, 7]
+        check spcReduced.fset.len == 7
+        check spcReduced.pf.shape == [7,]
+
+        check max_rel_error(spcReduced.kff, kff_true) < 1E-4
+        check max_rel_error(spcReduced.pf, pf_true) < 1E-8
 
 
 suite "partition":

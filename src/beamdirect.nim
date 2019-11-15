@@ -172,19 +172,21 @@ func unpackSpcs(spcs: seq[Spc], doftab: DofTable): (DofTable, Tensor[float]) =
     return (dofs, ys)
 
 func buildPartSet(allDofs, dofs2: DofTable): HashSet[int] =
+    # Create hashset of indices used for partioning tensors
     result.init(sets.rightSize(dofs2.len))
     for df in dofs2:
         result.incl allDofs[df]
 
-type SpcAppResult = tuple
+type SpcAppResult* = tuple
     kff: Tensor[float]
     kfs: Tensor[float]
     pf: Tensor[float]
     fset: DofTable
 
-func applySpcs*(knn, pn, ys: Tensor[float], nset, sset: DofTable): SpcAppResult =
+func applySpcs*(knn, pn: Tensor[float], nset: DofTable, spcs: seq[Spc]): SpcAppResult =
     # Partition knn and pn in f and s sets
     let
+        (sset, ys) = unpackSpcs(spcs, nset)
         spartset = buildPartSet(nset, sset)
         (kff, kfs, ksf, kss) = partitionMatrix(knn, spartset)
         (pf_bar, ps) = partitionVector(pn, spartset)
@@ -205,8 +207,7 @@ proc solveStatic*(db: InputDb): Tensor[float64] =
         knn = db.assemble(nset)
         pn = db.getLoadVector(nset)
 
-        (sset, ys) = unpackSpcs(toSeq(db.spcs.values), nset)
-        spcReduced = applySpcs(knn=knn, pn=pn, nset=nset, sset=sset, ys=ys)
+        spcReduced = applySpcs(knn=knn, pn=pn, nset=nset, spcs=toSeq(db.spcs.values))
 
     # let uf = solve(spcReduced.kff, spcReduced.pf)
     # let spcforce = spcReduced.kfs.T * uf
