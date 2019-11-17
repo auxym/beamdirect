@@ -9,7 +9,7 @@ type Element* = object
 
 type Node* = object
     id*: EntityId
-    loc*: Point
+    loc*: Vector2d
 
 type Material* = object
     id*: EntityId

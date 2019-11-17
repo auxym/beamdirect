@@ -2,7 +2,7 @@ import tables, hashes, sequtils, sets
 from math import hypot
 from algorithm import sort, sortedByIt
 import arraymancer
-import database, dof, basetypes, indextable
+import database, dof, basetypes, indextable, solveroutput
 
 func dist(a, b: Node): float64 =
     let dx = b.loc.x - a.loc.x
@@ -215,7 +215,42 @@ func mergeVecs(a, b: Tensor[float], seta, setb, setc: DofTable): Tensor[float] =
         else:
             raise newException(ValueError, "DOF " & $dof & " not found in A or B.")
 
-proc solveStatic*(db: InputDb): Tensor[float64] =
+func buildNodeIndex(dt: openArray[DofTable]): IndexTable[EntityId] =
+    let size_est = dt.mapIt(it.len).foldl(a+b) div 4
+    result = initIndexTable[EntityId](tables.rightSize(size_est))
+
+    for tab in dt:
+        for d in tab:
+            if d.node notin result:
+                result.add d.node
+
+func buildNodeVectorArray(source: varargs[
+    tuple[idx: DofTable, data: Tensor[float]]]): NodeVectorArray =
+
+    var allTabs = newSeq[DofTable](source.len)
+    for (tab, data) in source:
+        allTabs.add tab
+
+    func dir2int(d: DofDirection): int =
+        case d:
+            of tx: result = 0
+            of ty: result = 1
+            of rx: result = 2
+            of rz: result = 3
+
+    let idx = buildNodeIndex(allTabs).sorted
+    result.nodes = idx.allItems.toTensor
+    result.data = newTensorUninit[float](idx.len, numDofsPerNode)
+
+    for (tab, data) in source:
+        for row in 0..<data.shape[0]:
+            let
+                rdof = tab[row]
+                resultrow = idx.getIndex(rdof.node)
+                resultcol = dir2int(rdof.direction)
+            result.data[resultrow, resultcol] = data[row]
+
+func solveStatic*(db: InputDb): solveOutput =
     let
         nset = db.buildDofTable
         knn = db.assemble(nset)
@@ -226,8 +261,6 @@ proc solveStatic*(db: InputDb): Tensor[float64] =
     # Solve for f-set displacements
     let uf = solve(spcReduced.kff, spcReduced.pf)
 
-    # Merge uf + us to get full n-set displacements
-    let un = mergeVecs(uf, spcReduced.ys, spcReduced.fset, spcReduced.sset, nset)
-    return un
-    # let spcforce = spcReduced.kfs.T * uf
-
+    result.disp = buildNodeVectorArray((spcReduced.fset, uf),
+        (spcReduced.sset, spcReduced.ys))
+    result.disp.headers = @["tx", "ty", "rx", "rz"]
