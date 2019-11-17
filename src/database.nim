@@ -1,5 +1,5 @@
 import options, tables, sequtils, algorithm
-import basetypes, dof
+import basetypes, dof, indextable
 
 type Element* = object
     id*: EntityId

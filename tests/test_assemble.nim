@@ -1,4 +1,4 @@
-import beamdirect, input, utils_test, database, sets, dof
+import beamdirect, input, utils_test, database, sets, dof, indextable
 import arraymancer
 import unittest, os, sequtils, tables
 from math import sqrt

@@ -2,7 +2,7 @@ import tables, hashes, sequtils, sets
 from math import hypot
 from algorithm import sort, sortedByIt
 import arraymancer
-import database, dof, basetypes
+import database, dof, basetypes, indextable
 
 func dist(a, b: Node): float64 =
     let dx = b.loc.x - a.loc.x
@@ -181,7 +181,9 @@ type SpcAppResult* = tuple
     kff: Tensor[float]
     kfs: Tensor[float]
     pf: Tensor[float]
+    ys: Tensor[float]
     fset: DofTable
+    sset: DofTable
 
 func applySpcs*(knn, pn: Tensor[float], nset: DofTable, spcs: seq[Spc]): SpcAppResult =
     # Partition knn and pn in f and s sets
@@ -197,9 +199,21 @@ func applySpcs*(knn, pn: Tensor[float], nset: DofTable, spcs: seq[Spc]): SpcAppR
     result.kfs = kfs
     result.pf = pf_bar - kfs * ys
     result.fset = fset
+    result.sset = sset
+    result.ys = ys
 
     doAssert result.kff.shape[0] == result.fset.len
     doAssert result.pf.shape[0] == result.fset.len
+
+func mergeVecs(a, b: Tensor[float], seta, setb, setc: DofTable): Tensor[float] =
+    result = newTensorUninit[float](setc.len)
+    for i, dof in setc:
+        if dof in seta:
+            result[i] = a[seta[dof]]
+        elif dof in setb:
+            result[i] = b[setb[dof]]
+        else:
+            raise newException(ValueError, "DOF " & $dof & " not found in A or B.")
 
 proc solveStatic*(db: InputDb): Tensor[float64] =
     let
@@ -209,6 +223,11 @@ proc solveStatic*(db: InputDb): Tensor[float64] =
 
         spcReduced = applySpcs(knn=knn, pn=pn, nset=nset, spcs=toSeq(db.spcs.values))
 
-    # let uf = solve(spcReduced.kff, spcReduced.pf)
+    # Solve for f-set displacements
+    let uf = solve(spcReduced.kff, spcReduced.pf)
+
+    # Merge uf + us to get full n-set displacements
+    let un = mergeVecs(uf, spcReduced.ys, spcReduced.fset, spcReduced.sset, nset)
+    return un
     # let spcforce = spcReduced.kfs.T * uf
 
