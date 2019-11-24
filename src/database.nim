@@ -1,42 +1,16 @@
-import options, tables, sequtils, algorithm
-import basetypes, dof, indextable
+import tables, sequtils, algorithm
+import basetypes, indextable, element
 
-type Element* = object
+type DbElement* = object
     id*: EntityId
     nodes*: array[2, EntityId]
     mat*: EntityId
     section*: EntityId
 
-type Node* = object
-    id*: EntityId
-    loc*: Vector2d
-
-type Material* = object
-    id*: EntityId
-    E*: float64
-    nu*: float64
-    rho*: Option[float64]
-
-type BeamSection* = object
-    id*: EntityId
-    Iz*: float64
-    J*: float64
-    A*: float64
-
-type Spc* = object
-    id*: EntityId
-    node*: EntityId
-    comps*: Table[DofDirection, float]
-
-type Load* = object
-    id*: EntityId
-    node*: EntityId
-    comps*: Table[DofDirection, float]
-
 type InputDb* = object
     sections*: TableRef[EntityId, BeamSection]
     nodes*: TableRef[EntityId, Node]
-    elements*: TableRef[EntityId, Element]
+    elements*: TableRef[EntityId, DbElement]
     materials*: TableRef[EntityId, Material]
     spcs*: TableRef[EntityId, Spc]
     loads*: TableRef[EntityId, Load]
@@ -58,3 +32,11 @@ func buildDofTable*(db: InputDb) : DofTable =
             result.add (nodeId, dir)
 
     assert result.len == numDofs
+
+func getElemDenorm*(db: InputDb, id: EntityId): Element =
+    let dbelm = db.elements[id]
+    new(result)
+    result.id = id
+    result.nodes = [db.nodes[dbelm.nodes[0]], db.nodes[dbelm.nodes[1]]]
+    result.mat = db.materials[dbelm.mat]
+    result.section = db.sections[dbelm.section]

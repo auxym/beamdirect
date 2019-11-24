@@ -1,72 +1,17 @@
-import tables, hashes, sequtils, sets
-from math import hypot
+import tables, sequtils, sets
 from algorithm import sort, sortedByIt
 import arraymancer
-import database, dof, basetypes, indextable, solveroutput
-
-func dist(a, b: Node): float64 =
-    let dx = b.loc.x - a.loc.x
-    let dy = b.loc.y - a.loc.y
-    return hypot(dx, dy)
-
-func getStiffnessMatrix(elem: Element, db: InputDb): Tensor[float64] =
-    result = zeros[float64]([8, 8])
-
-    let nodeA = db.nodes[elem.nodes[0]]
-    let nodeB = db.nodes[elem.nodes[1]]
-    let mat = db.materials[elem.mat]
-    let section = db.sections[elem.section]
-
-    doAssert nodeA.loc.y == nodeB.loc.y
-
-    let L = dist(nodeA, nodeB)
-    let L2 = L*L
-    let L3 = L2*L
-
-    let nu = mat.nu
-    let E = mat.E
-    let A = section.A
-    let Iz = section.Iz
-    let J = section.J
-
-    var kaa = zeros[float64]([4, 4])
-    kaa[0, 0] = A / L
-    kaa[1, 1] = 12 * Iz / L3
-    kaa[2, 2] = J / (2 * (1+nu) * L)
-    kaa[3, 3] = 4 * Iz / L
-    kaa[1, 3] = 6 * Iz / L2
-    kaa[3, 1] = 6 * Iz / L2
-
-    var kab = -kaa.clone()
-    kab[3, 3] = 2 * Iz / L
-    kab[1, 3] = 6 * Iz / L2
-    kab[3, 1] = -6 * Iz / L2
-
-    var kbb = kaa.clone()
-    kbb[1, 3] = -6 * Iz / L2
-    kbb[3, 1] = -6 * Iz / L2
-
-    result[0..3, 0..3] = kaa
-    result[0..3, 4..7] = kab
-    result[4..7, 0..3] = kab.transpose
-    result[4..7, 4..7] = kbb
-    result = result * E
-
-func getDofList(elem: Element): seq[Dof] =
-    for nodeId in elem.nodes:
-        for dir in DofDirection:
-            result.add((nodeId, dir))
-    assert result.len == 8
-
+import database, basetypes, indextable, solveroutput, element
 
 func assemble*(db: InputDb, dofTab: DofTable): Tensor[float64] =
     let nDofs = dofTab.len
 
     result = zeros[float64](nDofs, nDofs)
-    for e in db.elements.values:
+    for eid in db.elements.keys:
         let
-            ke = e.getStiffnessMatrix(db)
-            elemDofs = e.getDofList
+            elem = db.getElemDenorm(eid) 
+            ke = elem.getStiffnessMatrix
+            elemDofs = elem.getDofList
         for row, rowDof in elemDofs:
             for col, colDof in elemDofs:
                 let rowDofGlobalId = dofTab[rowDof]
@@ -204,16 +149,6 @@ func applySpcs*(knn, pn: Tensor[float], nset: DofTable, spcs: seq[Spc]): SpcAppR
 
     doAssert result.kff.shape[0] == result.fset.len
     doAssert result.pf.shape[0] == result.fset.len
-
-func mergeVecs(a, b: Tensor[float], seta, setb, setc: DofTable): Tensor[float] =
-    result = newTensorUninit[float](setc.len)
-    for i, dof in setc:
-        if dof in seta:
-            result[i] = a[seta[dof]]
-        elif dof in setb:
-            result[i] = b[setb[dof]]
-        else:
-            raise newException(ValueError, "DOF " & $dof & " not found in A or B.")
 
 func buildNodeIndex(dt: openArray[DofTable]): IndexTable[EntityId] =
     let size_est = dt.mapIt(it.len).foldl(a+b) div 4

@@ -1,6 +1,6 @@
 import samson
 import tables, options, strutils, sequtils
-import database, basetypes, dof
+import database, basetypes
 
 type StrSpc = object
     id: EntityId
@@ -31,7 +31,7 @@ func toLoad(s: StrLoad): Load =
 type JsonInput = object
     BeamSections: seq[BeamSection]
     Nodes: seq[Node]
-    Elements: seq[Element]
+    Elements: seq[DbElement]
     Materials: seq[Material]
     Spcs: Option[seq[StrSpc]]
     Loads: Option[seq[StrLoad]]

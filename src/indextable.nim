@@ -1,6 +1,7 @@
-import tables, sequtils, algorithm
+import tables, algorithm
+import basetypes
 
-type IndexTable*[T] = object
+type IndexTable*[T] {.shallow.} = object
     values: seq[T]
     index: TableRef[T, Natural]
 
@@ -26,3 +27,17 @@ func sorted*[T](x: IndexTable[T]): IndexTable[T] =
     result.index = newTable[T, Natural](rightSize(x.len))
     for i, v in result.values:
         result.index[v] = i
+
+type DofTable* = IndexTable[Dof]
+
+func initDofTable*(cap: Natural) : DofTable =
+    result = initIndexTable[Dof](cap)
+
+func `[]`*(tab: DofTable, d: Dof): int = tab.getIndex(d)
+func `[]`*(tab: DofTable, i: Natural): Dof = tab.getItem(i)
+
+func difference*(a, b: DofTable): DofTable =
+    result = initDofTable(a.len)
+    for i, dof in a:
+        if dof notin b:
+            result.add dof
