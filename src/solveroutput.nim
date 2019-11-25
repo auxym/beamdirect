@@ -1,5 +1,4 @@
 import arraymancer
-import basetypes
 
 type ElementVectorArray* = object
   headers*: seq[string]
@@ -13,3 +12,4 @@ type NodeVectorArray* = object
 
 type solveOutput* = object
   disp*: NodeVectorArray
+  reacts*: NodeVectorArray

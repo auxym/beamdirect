@@ -175,7 +175,7 @@ func buildNodeVectorArray(source: varargs[
 
     let idx = buildNodeIndex(allTabs).sorted
     result.nodes = idx.allItems.toTensor
-    result.data = newTensorUninit[float](idx.len, numDofsPerNode)
+    result.data = zeros[float](idx.len, numDofsPerNode)
 
     for (tab, data) in source:
         for row in 0..<data.shape[0]:
@@ -199,3 +199,8 @@ func solveStatic*(db: InputDb): solveOutput =
     result.disp = buildNodeVectorArray((spcReduced.fset, uf),
         (spcReduced.sset, spcReduced.ys))
     result.disp.headers = @["tx", "ty", "rx", "rz"]
+
+    # Reaction loads
+    block:
+        let reacts = spcReduced.kfs.transpose * uf
+        result.reacts = buildNodeVectorArray((spcReduced.sset, reacts))
