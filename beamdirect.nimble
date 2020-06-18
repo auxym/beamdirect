@@ -3,7 +3,7 @@
 version     = "0.1.0"
 author      = "Francis Thérien"
 description = "Beam analysis"
-license     = "All rights reserved"
+license     = "MIT"
 skipDirs    = @["src", "tests"]
 
 # Deps
